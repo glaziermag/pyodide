@@ -1,0 +1,42 @@
+name: probe-scipy
+on:
+  push:
+    branches: [probe/scipy-runner]
+permissions: {}
+jobs:
+  scipy:
+    name: ${{ matrix.variant }} ${{ matrix.attempt }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {variant: node22-sync, attempt: 1}
+          - {variant: node22-sync, attempt: 2}
+          - {variant: node24-callPromising, attempt: 1}
+          - {variant: node24-callPromising, attempt: 2}
+          - {variant: node22-callPromising, attempt: 1}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: startsWith(matrix.variant, 'node24')
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - name: run scipy tests inside node
+        shell: bash -l {0}
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          node --version
+          npm install pyodide@314.0.7
+          cd packages/scipy
+          mv scipy-conftest.py conftest.py
+          if [[ "$VARIANT" == *callPromising ]]; then
+            sed -i 's/exit_code = pytest.main(pyodide.toPy(args));/exit_code = await pytest.main.callPromising(pyodide.toPy(args));/' scipy-pytest.js
+            grep -n "exit_code = " scipy-pytest.js
+          fi
+          node scipy-pytest.js --pyargs scipy -m 'not slow' -ra -v
